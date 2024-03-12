@@ -167,6 +167,7 @@ def supervised_training_iter(
 
     # calculate the final loss, backward the loss, and update the model 
     loss = semantic_loss + detail_loss + matte_loss
+    #print(loss)
     loss.backward()
     optimizer.step()
 
