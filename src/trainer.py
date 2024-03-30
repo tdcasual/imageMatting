@@ -65,14 +65,30 @@ class GaussianBlurLayer(nn.Module):
     def _init_kernel(self):
         sigma = 0.3 * ((self.kernel_size - 1) * 0.5 - 1) + 0.8
 
+        # 创建一个二维高斯核
         n = np.zeros((self.kernel_size, self.kernel_size))
         i = math.floor(self.kernel_size / 2)
         n[i, i] = 1
         kernel = scipy.ndimage.gaussian_filter(n, sigma)
-        if torch.cuda.current_device() is not None and self.op[1].weight.dtype is torch.float16:
-            kernel = kernel.astype(np.float16)
-        for name, param in self.named_parameters():
-            param.data.copy_(torch.from_numpy(kernel))
+
+        # 将numpy数组转换为torch.Tensor，并确保它的形状为[out_channels, in_channels/groups, height, width]
+        kernel = torch.from_numpy(kernel).float()
+        kernel = kernel / kernel.sum()
+        kernel = kernel.unsqueeze(0).unsqueeze(0)  # 增加两个维度，以匹配权重形状
+
+        # 对于分组卷积，重复核以匹配out_channels的数量
+        # 注意：这里假设in_channels/groups == 1
+        kernel = kernel.repeat(self.channels, 1, 1, 1)
+
+        # 使用no_grad来避免修改权重时计算梯度
+        with torch.no_grad():
+            self.op[1].weight.copy_(kernel)  # 直接复制到卷积层的权重
+
+            # 如果模型或层使用FP16，则需要将权重转换为相应的数据类型
+            if self.op[1].weight.dtype is torch.float16:
+                self.op[1].weight.data = self.op[1].weight.data.half()
+
+
 
 # ----------------------------------------------------------------------------------
 
