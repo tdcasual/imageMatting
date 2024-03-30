@@ -163,7 +163,7 @@ class OriginModNetDataLoader(Dataset):
         mask = torch.squeeze(mask, 0)
         trimap = torch.squeeze(trimap, 1)
         try:
-            return img.cuda(), trimap.cuda(), mask.cuda()
+            return img, trimap, mask
         except Exception as e:
             print(f"Error processing image at index {idx}: {str(e)}")
             return None
@@ -559,7 +559,7 @@ if __name__=="__main__":
     )
     all_data = OriginModNetDataLoader(files,[512,512],transform=transformer)
     #aim_model = init_model(MODNet(),ckpt_path="pretrained/modnet_photographic_portrait_matting.ckpt")
-    training_model  = NetTrainer(model=MODNet(),ckpt_path="delete.pth")
+    training_model  = NetTrainer(model=MODNet())
     #training_model.train(all_data)
     aim = ModNetImageGenerator(files,training_model.get_model())
     print(aim.evaluate([1,2,3,4,5]))
