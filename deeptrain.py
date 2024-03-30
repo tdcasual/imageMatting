@@ -24,10 +24,10 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 # ... 其他代码 ...
 # 配置DeepSpeed
 deepspeed_config = {
-    "train_batch_size": 32,
+    "train_batch_size": 16,
     "gradient_accumulation_steps": 1,
     "fp16": {
-        "enabled": False
+        "enabled": True
     },
     "optimizer": {
         "type": "AdamW",
@@ -126,9 +126,9 @@ if __name__ == "__main__":
     # 使用命令行参数或默认值设置fg和matte路径
     fg = args.fg_path
     matte = args.matte_path
-    print(fg,matte)
+    #print(fg,matte)
     files = ReadImage(fg, matte).read_same_names()
-    print(files)
+    #print(files)
     all_data = OriginModNetDataLoader(files, resize_dim=[512, 512])
 
     # 初始化模型
