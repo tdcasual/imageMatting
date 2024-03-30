@@ -79,9 +79,10 @@ def deepspeed_train_modnet(all_data, model, epochs=100, ckpt_path=None, deepspee
         config=deepspeed_config
     )
 
-    model.train()
+    
     # 开始训练
     for epoch in range(epochs):
+        model.train()
         
 
         # Initialize the gradient scaler for automatic mixed precision
