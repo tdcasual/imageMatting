@@ -25,7 +25,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 # ... 其他代码 ...
 # 配置DeepSpeed
 deepspeed_config = {
-    "train_batch_size": 16,
+    "train_batch_size": 8,
     "gradient_accumulation_steps": 1,
     "fp16": {
         "enabled": True
@@ -122,8 +122,12 @@ if __name__ == "__main__":
     parser.add_argument('--fg_path', type=str, default=default_fg_path, help='Foreground data path (default: {})'.format(default_fg_path))
     parser.add_argument('--matte_path', type=str, default=default_matte_path, help='Matte data path (default: {})'.format(default_matte_path))
     parser.add_argument('--local_rank', type=int, default=0, help='Local rank for distributed training (default: 0).')  # 添加对 --local_rank 的支持
-    
+    parser.add_argument('--batch_size', type=int, default=0, help='Local batch_size for distributed training (default: 0).')  # 添加对 --local_rank 的支持
+    parser.add_argument('--epoch', type=int, default=0, help='Local epoch for distributed training (default: 0).')  # 添加对 --local_rank 的支持
     args = parser.parse_args()
+
+    default_epoch = 50 if args.epoch == 0 else args.epoch
+    deepspeed_config["train_batch_size"]= 8 if args.batch_size == 0 else args.batch_size
 
     # 使用 args.local_rank 设置分布式环境
     #torch.cuda.set_device(args.local_rank)
@@ -152,7 +156,7 @@ if __name__ == "__main__":
     ckpt_path = args.ckptpath
 
     # 调用deepspeed进行训练
-    deepspeed_train_modnet(all_data, model, epochs=100, ckpt_path=ckpt_path)
+    deepspeed_train_modnet(all_data, model, epochs=default_epoch, ckpt_path=ckpt_path)
 
     # 获取模型权重
     model_state_dict = model.module.state_dict() if isinstance(model, torch.nn.parallel.DistributedDataParallel) else model.state_dict()
