@@ -6,6 +6,7 @@ from wraptrain import ReadImage,OriginModNetDataLoader,ImageMatteLoader,ModNetIm
 from torch.utils.data import DataLoader
 import torch.distributed as dist
 from torch.cuda.amp import autocast, GradScaler
+from torch.utils.tensorboard import SummaryWriter
 
 # 引入必要的模块
 import torch.multiprocessing as mp
@@ -28,10 +29,10 @@ def setup_tensorboard(rank):
     if rank == 0:
         global_summary_writer = SummaryWriter(log_dir="runs/deepspeed_train")
 
-def write_to_tensorboard(epoch, batch_idx, losses, rank):
+def write_to_tensorboard(epoch, batch_idx, losses, rank, datalength):
     # 将训练损失写入 TensorBoard
     if rank == 0:
-        global_summary_writer.add_scalar('Training/Loss', sum(losses), epoch * len(dataloader) + batch_idx)
+        global_summary_writer.add_scalar('Training/Loss', sum(losses), epoch * datalength + batch_idx)
 
 # ... 其他代码 ...
 # 配置DeepSpeed
@@ -112,7 +113,7 @@ def deepspeed_train_modnet(all_data, model, epochs=100, ckpt_path=None, deepspee
                     model, optimizer, image, trimap, gt_matte,
                     semantic_scale=10.0, detail_scale=10.0, matte_scale=1.0)
                 total_loss = semantic_loss*10.0 + detail_loss*10.0 + matte_loss
-            write_to_tensorboard(epoch, batch_idx, [semantic_loss.item(), detail_loss.item(), matte_loss.item()], rank)
+            write_to_tensorboard(epoch, batch_idx, [semantic_loss.item(), detail_loss.item(), matte_loss.item()], rank, len(dataloader))
                 
             # Scales the loss, calls backward to create scaled gradients, and step the optimizer
             # Unscales the gradients of optimizer's assigned params in-place before calling optimizer.step()
