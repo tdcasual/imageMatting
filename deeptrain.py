@@ -1,10 +1,9 @@
 import torch
 import deepspeed
-import wraptrain
-from wraptrain import MODNet, OriginModNetDataLoader, init_model, train_modnet
-from torch.utils.data import DataLoader
+from src.models.modnet import MODNet
 from src.trainer import supervised_training_iter
-import torchvision.transforms as transforms
+from wraptrain import ReadImage,OriginModNetDataLoader,ImageMatteLoader,ModNetImageGenerator,NetTrainer
+from torch.utils.data import DataLoader
 import torch.distributed as dist
 
 # 引入必要的模块
@@ -25,7 +24,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 # ... 其他代码 ...
 # 配置DeepSpeed
 deepspeed_config = {
-    "train_batch_size": 16,
+    "train_batch_size": 32,
     "gradient_accumulation_steps": 1,
     "fp16": {
         "enabled": False
@@ -50,12 +49,6 @@ deepspeed_config = {
 }
 
 
-transformer = transforms.Compose(
-    [
-        transforms.ToTensor(),
-        transforms.Normalize((0.5,), (0.5,))
-    ]
-)
 def deepspeed_train_modnet(all_data, model, epochs=100, ckpt_path=None, deepspeed_config=deepspeed_config):
     # 确保在主进程中设置分布式环境
 
@@ -76,7 +69,7 @@ def deepspeed_train_modnet(all_data, model, epochs=100, ckpt_path=None, deepspee
                             pin_memory=True)
 
     # 初始化模型
-    model = init_model(model, ckpt_path=ckpt_path)
+    model = NetTrainer(model, ckpt_path=ckpt_path).get_model()
     model, optimizer, _, scheduler = deepspeed.initialize(
         model=model,
         optimizer=None,
@@ -98,23 +91,46 @@ def deepspeed_train_modnet(all_data, model, epochs=100, ckpt_path=None, deepspee
             
     # ... 其他代码不变 ...
 
-if __name__ =="__main__":
+import argparse
+import os
+
+# 默认的fg和matte路径
+default_fg_path = "/mnt/data/Train/FG"
+default_matte_path = "/mnt/data/Train/Alpha"
+
+if __name__ == "__main__":
+    # 解析命令行参数
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--ckptpath', type=str, default=None, help='Path to the checkpoint file.')
+    parser.add_argument('--fg_path', type=str, default=default_fg_path, help='Foreground data path (default: {})'.format(default_fg_path))
+    parser.add_argument('--matte_path', type=str, default=default_matte_path, help='Matte data path (default: {})'.format(default_matte_path))
+
+    args = parser.parse_args()
+
     # 确保已经设置了分布式环境（在主进程中）
-    import os
     rank = int(os.environ['RANK'])
     world_size = int(os.environ['WORLD_SIZE'])
     if rank == 0:
         dist.init_process_group(backend='nccl')
 
-    base_path = "/mnt/data/Train/"
-    fg = base_path+"FG"
-    matte= base_path+"Alpha"
-    files = wraptrain.create_dataframe(fg, matte)
-    all_data = OriginModNetDataLoader(files, resize_dim=[512, 512], transform=transformer)
-    
+    # 使用命令行参数或默认值设置fg和matte路径
+    fg = args.fg_path
+    matte = args.matte_path
+
+    files = ReadImage(fg, matte).read_same_names()
+    all_data = OriginModNetDataLoader(files, resize_dim=[512, 512])
 
     # 初始化模型
     model = MODNet()
 
+    # 根据命令行参数设置ckpt_path
+    ckpt_path = args.ckptpath
+
     # 调用deepspeed进行训练
-    deepspeed_train_modnet(all_data, model, epochs=100, ckpt_path="pretrained/modnet_photographic_portrait_matting.ckpt")
+    deepspeed_train_modnet(all_data, model, epochs=100, ckpt_path=ckpt_path)
+
+    # 获取模型权重
+    model_state_dict = model.module.state_dict() if isinstance(model, torch.nn.parallel.DistributedDataParallel) else model.state_dict()
+
+    # 保存模型权重
+    torch.save(model_state_dict, 'model.pth')
