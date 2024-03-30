@@ -82,7 +82,8 @@ class ReadImage:
         return df_files_corrected
 
     
-    def group_images_by_size(self) -> list[pd.DataFrame]:
+    #def group_images_by_size(self) -> list[pd.DataFrame]:
+    def group_images_by_size(self):
         # 创建一个字典来存储不同尺寸的图片路径及其对应的索引
         annotations_df = self.fils_pd
         size_to_indices = {}
