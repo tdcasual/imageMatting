@@ -6,6 +6,7 @@
 
 
 #载入所有需要使用的包
+from torch.cuda.amp import autocast, GradScaler
 import torch
 from src.models.modnet import MODNet
 from src.trainer import supervised_training_iter
@@ -493,7 +494,7 @@ class NetTrainer:
     def train(self, dataset, model_name="Net", model_save_path="./model.pth",
               batch_size=4, learning_rate=0.01, epochs=40, step_size=0.25, gamma=0.1,
               update_freq=100, checkpoint_freq=5, checkpoint_dir='checkpoints', load_or_not=True):
-
+        scaler = GradScaler()
         train_dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
         optimizer = torch.optim.SGD(self.model.parameters(), lr=learning_rate, momentum=0.9)
         lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=int(step_size * epochs), gamma=gamma)
@@ -517,7 +518,9 @@ class NetTrainer:
 
         for epoch in range(start_epoch, epochs):
             for idx, (image, trimap, gt_matte) in enumerate(train_dataloader):
+                
                 image, trimap, gt_matte = [item.to(self.device) for item in (image, trimap, gt_matte)]
+
                 semantic_loss, detail_loss, matte_loss = supervised_training_iter(image, trimap, gt_matte)
                 
                 self.writer.add_scalar('semantic_loss', semantic_loss, epoch * len(train_dataloader) + idx)

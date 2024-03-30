@@ -69,7 +69,8 @@ class GaussianBlurLayer(nn.Module):
         i = math.floor(self.kernel_size / 2)
         n[i, i] = 1
         kernel = scipy.ndimage.gaussian_filter(n, sigma)
-
+        if torch.cuda.current_device() is not None and self.op[1].weight.dtype is torch.float16:
+            kernel = kernel.astype(np.float16)
         for name, param in self.named_parameters():
             param.data.copy_(torch.from_numpy(kernel))
 

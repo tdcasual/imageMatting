@@ -5,6 +5,7 @@ from src.trainer import supervised_training_iter
 from wraptrain import ReadImage,OriginModNetDataLoader,ImageMatteLoader,ModNetImageGenerator,NetTrainer
 from torch.utils.data import DataLoader
 import torch.distributed as dist
+from torch.cuda.amp import autocast, GradScaler
 
 # 引入必要的模块
 import torch.multiprocessing as mp
@@ -78,19 +79,32 @@ def deepspeed_train_modnet(all_data, model, epochs=100, ckpt_path=None, deepspee
         config=deepspeed_config
     )
 
+
+
     # 开始训练
     for epoch in range(epochs):
         model.train()
-        for batch_idx, (image, trimap, gt_matte) in enumerate(dataloader):
-            # 如果需要，这里可以添加 .cuda() 和 .half() 的操作
-            # ...
 
-            # 训练迭代
-            semantic_loss, detail_loss, matte_loss = supervised_training_iter(
-                model, optimizer, image, trimap, gt_matte,
-                semantic_scale=10.0, detail_scale=10.0, matte_scale=1.0)
-            
-    # ... 其他代码不变 ...
+        # Initialize the gradient scaler for automatic mixed precision
+        scaler = GradScaler()
+
+        for batch_idx, (image, trimap, gt_matte) in enumerate(dataloader):
+            # Resets gradients of the optimizer
+            optimizer.zero_grad()
+
+            # Automatic Mixed Precision block
+            with autocast():
+                # 训练迭代中的前向传播
+                semantic_loss, detail_loss, matte_loss = supervised_training_iter(
+                    model, optimizer, image, trimap, gt_matte,
+                    semantic_scale=10.0, detail_scale=10.0, matte_scale=1.0)
+
+            # Scales the loss, calls backward to create scaled gradients, and step the optimizer
+            # Unscales the gradients of optimizer's assigned params in-place before calling optimizer.step()
+            scaler.scale(semantic_loss + detail_loss + matte_loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+
 
 import argparse
 import os
