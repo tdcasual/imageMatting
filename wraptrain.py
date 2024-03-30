@@ -6,30 +6,26 @@
 
 
 #载入所有需要使用的包
-import os
 import torch
-from torch import nn
-from torch.utils.data import DataLoader, Dataset
+from src.models.modnet import MODNet
+from src.trainer import supervised_training_iter
+from torch.utils.data import DataLoader
+from torch.utils.data import Dataset
 from torchvision import transforms
 import numpy as np
 import cv2
-from scipy.ndimage import distance_transform_edt
 from skimage import morphology
-from skimage.metrics import structural_similarity, peak_signal_noise_ratio
-from datetime import datetime
-from torchvision.transforms.functional import to_tensor, to_pil_image
+from scipy.ndimage import distance_transform_edt
+import torch.nn.functional as F
 from PIL import Image, ImageOps
 import pandas as pd
 from pathlib import Path
 import matplotlib.pyplot as plt
-import torch.nn.functional as F
-
-# 引入自定义模块
-from src.models.modnet import MODNet
-from src.trainer import supervised_training_iter
-
-# Tensorboard 相关库
 from torch.utils.tensorboard import SummaryWriter
+import os
+from skimage.metrics import structural_similarity, peak_signal_noise_ratio
+from datetime import datetime
+from torchvision.transforms.functional import to_tensor, to_pil_image
 #from tensorboardX import SummaryWriter  # 若您只需要一个，请选择保留其中一个
 
 
@@ -113,21 +109,6 @@ class ReadImage:
         # 统计各个尺寸的图像数量
         size_counts = {size: len(indices) for size, indices in size_to_indices.items()}
 
-        # 绘制柱形图（可选）
-        if 'plt' in globals():  # 检查是否可以进行绘图
-            fig, ax = plt.subplots(figsize=(10, 6))
-            sizes = list(size_counts.keys())
-            counts = list(size_counts.values())
-            bar_colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
-            ax.bar(range(len(sizes)), counts, color=bar_colors[:len(sizes)])
-            ax.set_xticks(range(len(sizes)))
-            ax.set_xticklabels([f"{size[0]}x{size[1]}" for size in sizes], rotation=45, ha='right')
-            ax.set_xlabel('Image Size')
-            ax.set_ylabel('Count')
-            ax.set_title('Image Size Distribution')
-            ax.grid(True, axis='y', linestyle='--', alpha=0.7)
-            fig.tight_layout()
-            plt.show()
 
         return grouped_annotations_files
 
@@ -141,43 +122,46 @@ class ReadImage:
 class OriginModNetDataLoader(Dataset):
     def __init__(self, annotations_file, resize_dim=None, transform=None):
         self.img_labels = annotations_file
+        if not transform:
+            transform = transforms.Compose(
+                [
+                    transforms.ToTensor(),
+                    transforms.Normalize((0.5), (0.5))
+                ]
+            )
         self.transform = transform
+        
+            
         self.resize_dim = resize_dim
 
     def __len__(self):
         return len(self.img_labels)
 
     def __getitem__(self, idx):
+        
+        img_path = self.img_labels.iloc[idx, 0]
+        mask_path = self.img_labels.iloc[idx, 1]
+        img = self._load_image(img_path)
+        mask = self._load_mask(mask_path)
+
+        if  self.transform:
+            img = self.transform(img)
+            trimap = self.get_trimap(mask)
+            mask = self.transform(mask)
+
+        if self.resize_dim is not None:
+            img = self._center_crop_and_resize(img)
+            mask = self._center_crop_and_resize(mask)
+            trimap = self._center_crop_and_resize(trimap, trimap=True)
+        else:
+            img = self._resize(img)
+            mask = self._resize(mask)
+            trimap = self._resize(trimap, trimap=True)
+
+        img = torch.squeeze(img, 0)
+        mask = torch.squeeze(mask, 0)
+        trimap = torch.squeeze(trimap, 1)
         try:
-            img_path = self.img_labels.iloc[idx, 0]
-            mask_path = self.img_labels.iloc[idx, 1]
-            img = self._load_image(img_path)
-            mask = self._load_mask(mask_path)
-
-            if not self.transform:
-                transformer = transforms.Compose(
-                    [
-                        transforms.ToTensor(),
-                        transforms.Normalize((0.5), (0.5))
-                    ]
-                )
-                img = self.transform(img)
-                trimap = self.get_trimap(mask)
-                mask = self.transform(mask)
-
-            if self.resize_dim is not None:
-                img = self._center_crop_and_resize(img)
-                mask = self._center_crop_and_resize(mask)
-                trimap = self._center_crop_and_resize(trimap, trimap=True)
-            else:
-                img = self._resize(img)
-                mask = self._resize(mask)
-                trimap = self._resize(trimap, trimap=True)
-
-            img = torch.squeeze(img, 0)
-            mask = torch.squeeze(mask, 0)
-            trimap = torch.squeeze(trimap, 1)
-
             return img.cuda(), trimap.cuda(), mask.cuda()
         except Exception as e:
             print(f"Error processing image at index {idx}: {str(e)}")
@@ -533,7 +517,7 @@ class NetTrainer:
         for epoch in range(start_epoch, epochs):
             for idx, (image, trimap, gt_matte) in enumerate(train_dataloader):
                 image, trimap, gt_matte = [item.to(self.device) for item in (image, trimap, gt_matte)]
-                semantic_loss, detail_loss, matte_loss = self.supervised_training_iter(image, trimap, gt_matte)
+                semantic_loss, detail_loss, matte_loss = supervised_training_iter(image, trimap, gt_matte)
                 
                 self.writer.add_scalar('semantic_loss', semantic_loss, epoch * len(train_dataloader) + idx)
                 self.writer.add_scalar('detail_loss', detail_loss, epoch * len(train_dataloader) + idx)

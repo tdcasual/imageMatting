@@ -59,7 +59,8 @@ def deepspeed_train_modnet(all_data, model, epochs=100, ckpt_path=None, deepspee
 
     # 创建DistributedSampler
     sampler = torch.utils.data.distributed.DistributedSampler(all_data, num_replicas=world_size, rank=rank)
-
+    num_workers = min(mp.cpu_count(), 1024)  # 假设我们使用不超过4个workers
+    #num_workers=4
     # 更新DataLoader
     dataloader = DataLoader(all_data, 
                             batch_size=deepspeed_config["train_batch_size"] // world_size, 
@@ -99,13 +100,22 @@ default_fg_path = "/mnt/data/Train/FG"
 default_matte_path = "/mnt/data/Train/Alpha"
 
 if __name__ == "__main__":
+    torch.multiprocessing.set_start_method('spawn', force=True)
     # 解析命令行参数
+    
     parser = argparse.ArgumentParser()
     parser.add_argument('--ckptpath', type=str, default=None, help='Path to the checkpoint file.')
     parser.add_argument('--fg_path', type=str, default=default_fg_path, help='Foreground data path (default: {})'.format(default_fg_path))
     parser.add_argument('--matte_path', type=str, default=default_matte_path, help='Matte data path (default: {})'.format(default_matte_path))
-
+    parser.add_argument('--local_rank', type=int, default=0, help='Local rank for distributed training (default: 0).')  # 添加对 --local_rank 的支持
+    
     args = parser.parse_args()
+
+    # 使用 args.local_rank 设置分布式环境
+    #torch.cuda.set_device(args.local_rank)
+    #torch.distributed.init_process_group(backend='nccl')
+
+    #args = parser.parse_args()
 
     # 确保已经设置了分布式环境（在主进程中）
     rank = int(os.environ['RANK'])
@@ -116,8 +126,9 @@ if __name__ == "__main__":
     # 使用命令行参数或默认值设置fg和matte路径
     fg = args.fg_path
     matte = args.matte_path
-
+    print(fg,matte)
     files = ReadImage(fg, matte).read_same_names()
+    print(files)
     all_data = OriginModNetDataLoader(files, resize_dim=[512, 512])
 
     # 初始化模型
