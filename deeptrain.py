@@ -102,9 +102,9 @@ def deepspeed_train_modnet(all_data, model, epochs=100, ckpt_path=None, deepspee
 
             # Scales the loss, calls backward to create scaled gradients, and step the optimizer
             # Unscales the gradients of optimizer's assigned params in-place before calling optimizer.step()
-            scaler.scale(semantic_loss + detail_loss + matte_loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
+            #scaler.scale(semantic_loss + detail_loss + matte_loss).backward()
+            #scaler.step(optimizer)
+            #scaler.update()
 
 
 import argparse
