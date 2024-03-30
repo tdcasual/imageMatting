@@ -79,17 +79,17 @@ def deepspeed_train_modnet(all_data, model, epochs=100, ckpt_path=None, deepspee
         config=deepspeed_config
     )
 
-
-
+    model.train()
     # 开始训练
     for epoch in range(epochs):
-        model.train()
+        
 
         # Initialize the gradient scaler for automatic mixed precision
         scaler = GradScaler()
 
         for batch_idx, (image, trimap, gt_matte) in enumerate(dataloader):
             # Resets gradients of the optimizer
+            image,trimap,gt_matte = image.cuda().half(), trimap.cuda().half(), gt_matte.cuda().half()
             optimizer.zero_grad()
 
             # Automatic Mixed Precision block
