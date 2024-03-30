@@ -20,7 +20,18 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 
 # ... 其他代码不变 ...
 
+global_summary_writer = None
 
+def setup_tensorboard(rank):
+    # 只在 rank 为 0 的进程中创建 SummaryWriter
+    global global_summary_writer
+    if rank == 0:
+        global_summary_writer = SummaryWriter(log_dir="runs/deepspeed_train")
+
+def write_to_tensorboard(epoch, batch_idx, losses, rank):
+    # 将训练损失写入 TensorBoard
+    if rank == 0:
+        global_summary_writer.add_scalar('Training/Loss', sum(losses), epoch * len(dataloader) + batch_idx)
 
 # ... 其他代码 ...
 # 配置DeepSpeed
@@ -52,6 +63,7 @@ deepspeed_config = {
 
 def deepspeed_train_modnet(all_data, model, epochs=100, ckpt_path=None, deepspeed_config=deepspeed_config):
     # 确保在主进程中设置分布式环境
+    setup_tensorboard(dist.get_rank())
 
     
     # 获取全局世界大小和当前rank
@@ -99,13 +111,16 @@ def deepspeed_train_modnet(all_data, model, epochs=100, ckpt_path=None, deepspee
                 semantic_loss, detail_loss, matte_loss = supervised_training_iter(
                     model, optimizer, image, trimap, gt_matte,
                     semantic_scale=10.0, detail_scale=10.0, matte_scale=1.0)
-
+                total_loss = semantic_loss*10.0 + detail_loss*10.0 + matte_loss
+            write_to_tensorboard(epoch, batch_idx, [semantic_loss.item(), detail_loss.item(), matte_loss.item()], rank)
+                
             # Scales the loss, calls backward to create scaled gradients, and step the optimizer
             # Unscales the gradients of optimizer's assigned params in-place before calling optimizer.step()
             #scaler.scale(semantic_loss + detail_loss + matte_loss).backward()
             #scaler.step(optimizer)
             #scaler.update()
-
+    if dist.get_rank() == 0:
+        global_summary_writer.close()
 
 import argparse
 import os
