@@ -8,8 +8,9 @@ import torch.distributed as dist
 from torch.cuda.amp import autocast, GradScaler
 from torch.utils.tensorboard import SummaryWriter
 import json
+from datetime import datetime
 
-# 引入必要的模块
+
 import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel as DDP
 
@@ -27,8 +28,18 @@ global_summary_writer = None
 def setup_tensorboard(rank):
     # 只在 rank 为 0 的进程中创建 SummaryWriter
     global global_summary_writer
+    # 获取当前日期和时间
+    current_time = datetime.now()
+    # 格式化日期和时间，例如："YYYY-MM-DD_HH-MM-SS"
+    formatted_time = current_time.strftime('%Y-%m-%d_%H-%M-%S')
+
+    # 将格式化的时间字符串添加到 log_dir 路径中
+    log_dir = f"/mnt/data/runs/deepspeed_train_{formatted_time}"
+
+    
+    # 引入必要的模块
     if rank == 0:
-        global_summary_writer = SummaryWriter(log_dir="runs/deepspeed_train")
+        global_summary_writer = SummaryWriter(log_dir=log_dir)
 
 def write_to_tensorboard(epoch, batch_idx, losses, rank, datalength):
     # 将训练损失写入 TensorBoard
