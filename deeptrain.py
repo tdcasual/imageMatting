@@ -1,12 +1,13 @@
 import torch
 import deepspeed
 from src.models.modnet import MODNet
-from src.trainer import supervised_training_iter
+from src.trainer import speed_training_iter
 from wraptrain import ReadImage,OriginModNetDataLoader,ImageMatteLoader,ModNetImageGenerator,NetTrainer
 from torch.utils.data import DataLoader
 import torch.distributed as dist
 from torch.cuda.amp import autocast, GradScaler
 from torch.utils.tensorboard import SummaryWriter
+import json
 
 # 引入必要的模块
 import torch.multiprocessing as mp
@@ -103,25 +104,29 @@ def deepspeed_train_modnet(all_data, model, epochs=100, ckpt_path=None, deepspee
 
         for batch_idx, (image, trimap, gt_matte) in enumerate(dataloader):
             # Resets gradients of the optimizer
-            image,trimap,gt_matte = image.cuda().half(), trimap.cuda().half(), gt_matte.cuda().half()
             optimizer.zero_grad()
 
             # Automatic Mixed Precision block
             with autocast():
                 # 训练迭代中的前向传播
-                semantic_loss, detail_loss, matte_loss = supervised_training_iter(
+                total_loss = speed_training_iter(
                     model, optimizer, image, trimap, gt_matte,
                     semantic_scale=10.0, detail_scale=10.0, matte_scale=1.0)
-                total_loss = semantic_loss*10.0 + detail_loss*10.0 + matte_loss
-            write_to_tensorboard(epoch, batch_idx, [semantic_loss.item(), detail_loss.item(), matte_loss.item()], rank, len(dataloader))
+            write_to_tensorboard(epoch, batch_idx, total_loss.item(), rank, len(dataloader))  # 修改此处，只传递总损失    
+            #write_to_tensorboard(epoch, batch_idx, [semantic_loss.item(), detail_loss.item(), matte_loss.item()], rank, len(dataloader))
                 
             # Scales the loss, calls backward to create scaled gradients, and step the optimizer
             # Unscales the gradients of optimizer's assigned params in-place before calling optimizer.step()
-            #scaler.scale(semantic_loss + detail_loss + matte_loss).backward()
-            #scaler.step(optimizer)
-            #scaler.update()
+            scaler.scale(total_loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
     if dist.get_rank() == 0:
         global_summary_writer.close()
+def load_deepspeed_config(config_file_path):
+    with open(config_file_path, 'r') as f:
+        deepspeed_config = json.load(f)
+    return deepspeed_config
+
 
 import argparse
 import os
@@ -141,10 +146,15 @@ if __name__ == "__main__":
     parser.add_argument('--local_rank', type=int, default=0, help='Local rank for distributed training (default: 0).')  # 添加对 --local_rank 的支持
     parser.add_argument('--batch_size', type=int, default=0, help='Local batch_size for distributed training (default: 0).')  # 添加对 --local_rank 的支持
     parser.add_argument('--epoch', type=int, default=0, help='Local epoch for distributed training (default: 0).')  # 添加对 --local_rank 的支持
+    parser.add_argument('--deepspeed_config', default="deepspeed.config", type=str, help='Path to the DeepSpeed configuration file.')
     args = parser.parse_args()
 
+    if args.ckptpath == "None":
+        args.ckptpath = None
+    deepspeed_config = load_deepspeed_config(args.deepspeed_config)
     default_epoch = 50 if args.epoch == 0 else args.epoch
-    deepspeed_config["train_batch_size"]= 8 if args.batch_size == 0 else args.batch_size
+    if args.batch_size != 0:
+        deepspeed_config["train_batch_size"]= args.batch_size
 
     # 使用 args.local_rank 设置分布式环境
     #torch.cuda.set_device(args.local_rank)
@@ -176,7 +186,15 @@ if __name__ == "__main__":
     deepspeed_train_modnet(all_data, model, epochs=default_epoch, ckpt_path=ckpt_path)
 
     # 获取模型权重
-    model_state_dict = model.module.state_dict() if isinstance(model, torch.nn.parallel.DistributedDataParallel) else model.state_dict()
+    #model_state_dict = model.module.state_dict() if isinstance(model, torch.nn.parallel.DistributedDataParallel) else model.state_dict()
 
-    # 保存模型权重
-    torch.save(model_state_dict, 'model.pth')
+
+    # 训练完成后，在 rank 0 的 worker 上保存模型
+    if dist.get_rank() == 0:
+        # 保存完整的模型权重
+        model_state_dict = model.module.state_dict() if isinstance(model, torch.nn.parallel.DistributedDataParallel) else model.state_dict()
+        torch.save(model_state_dict, 'model.pth')
+
+    # 通知所有工作进程训练完成，以便优雅地退出
+    dist.barrier()
+

@@ -191,6 +191,84 @@ def supervised_training_iter(
     # for test
     return semantic_loss, detail_loss, matte_loss
 
+def speed_training_iter(
+    modnet, optimizer, image, trimap, gt_matte,
+    semantic_scale=10.0, detail_scale=10.0, matte_scale=1.0, scaler=None):
+    """ Supervised training iteration of MODNet
+    This function trains MODNet for one iteration in a labeled dataset.
+    Now it also accepts an optional argument `scaler` for using AMP.
+
+    Arguments:
+        modnet (torch.nn.Module): instance of MODNet
+        optimizer (torch.optim.Optimizer): optimizer for supervised training 
+        image (torch.Tensor): input RGB image
+                              its pixel values should be normalized
+        trimap (torch.Tensor): trimap used to calculate the losses
+                               its pixel values can be 0, 0.5, or 1
+                               (foreground=1, background=0, unknown=0.5)
+        gt_matte (torch.Tensor): ground truth alpha matte
+                                 its pixel values are between [0, 1]
+        semantic_scale (float): scale of the semantic loss
+                                NOTE: please adjust according to your dataset
+        detail_scale (float): scale of the detail loss
+                              NOTE: please adjust according to your dataset
+        matte_scale (float): scale of the matte loss
+                             NOTE: please adjust according to your dataset
+        scaler (torch.cuda.amp.GradScaler, optional): Gradient scaler for AMP
+
+    Returns:
+        semantic_loss (torch.Tensor): loss of the semantic estimation [Low-Resolution (LR) Branch]
+        detail_loss (torch.Tensor): loss of the detail prediction [High-Resolution (HR) Branch]
+        matte_loss (torch.Tensor): loss of the semantic-detail fusion [Fusion Branch]
+
+    Example:
+        # Inside deepspeed_train_modnet function...
+        with autocast():
+            semantic_loss, detail_loss, matte_loss = supervised_training_iter(
+                model, optimizer, image.half(), trimap.half(), gt_matte.half(), scaler=scaler
+            )
+        # Scale the loss, call backward, and update the optimizer
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
+    """
+    global blurer
+
+    # set the model to train mode and clear the optimizer
+    modnet.train()
+    optimizer.zero_grad()
+
+    # forward the model
+    pred_semantic, pred_detail, pred_matte = modnet(image.half(), False)
+
+    # calculate the boundary mask from the trimap
+    boundaries = (trimap < 0.5) + (trimap > 0.5)
+
+    # calculate the semantic loss
+    gt_semantic = F.interpolate(gt_matte.half(), scale_factor=1/16, mode='bilinear')
+    gt_semantic = blurer(gt_semantic.half())
+    semantic_loss = torch.mean(F.mse_loss(pred_semantic, gt_semantic))
+    semantic_loss = semantic_scale * semantic_loss
+
+    # calculate the detail loss
+    pred_boundary_detail = torch.where(boundaries, trimap.half(), pred_detail)
+    gt_detail = torch.where(boundaries, trimap.half(), gt_matte.half())
+    detail_loss = torch.mean(F.l1_loss(pred_boundary_detail, gt_detail))
+    detail_loss = detail_scale * detail_loss
+
+    # calculate the matte loss
+    pred_boundary_matte = torch.where(boundaries, trimap.half(), pred_matte)
+    matte_l1_loss = F.l1_loss(pred_matte, gt_matte.half()) + 4.0 * F.l1_loss(pred_boundary_matte, gt_matte.half())
+    matte_compositional_loss = F.l1_loss(image * pred_matte, image * gt_matte.half()) \
+        + 4.0 * F.l1_loss(image * pred_boundary_matte, image * gt_matte.half())
+    matte_loss = torch.mean(matte_l1_loss + matte_compositional_loss)
+    matte_loss = matte_scale * matte_loss
+
+    # Calculate the final loss
+    loss = semantic_loss + detail_loss + matte_loss
+
+    # Return the unscaled losses since we will handle scaling inside `deepspeed_train_modnet`
+    return loss
 
 def soc_adaptation_iter(
     modnet, backup_modnet, optimizer, image,

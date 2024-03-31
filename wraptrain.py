@@ -164,7 +164,7 @@ class OriginModNetDataLoader(Dataset):
         mask = torch.squeeze(mask, 0)
         trimap = torch.squeeze(trimap, 1)
         try:
-            return img, trimap, mask
+            return img.cuda(), trimap.cuda(), mask.cuda()
         except Exception as e:
             print(f"Error processing image at index {idx}: {str(e)}")
             return None
