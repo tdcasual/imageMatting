@@ -186,9 +186,22 @@ if __name__ == "__main__":
 
     # 训练完成后，在 rank 0 的 worker 上保存模型
     if dist.get_rank() == 0:
-        # 保存完整的模型权重
-        model_state_dict = model.module.state_dict() if isinstance(model, torch.nn.parallel.DistributedDataParallel) else model.state_dict()
-        torch.save(model_state_dict, args.save_path)
+        # 获取模型的状态字典
+        model_state_dict = model.state_dict()
+
+        # 检查键名是否已经包含`module.`前缀
+        # 如果没有，则手动添加
+        new_state_dict = {}
+        for k, v in model_state_dict.items():
+            if not k.startswith('module.'):
+                new_key = 'module.' + k  # 添加`module.`前缀
+            else:
+                new_key = k
+            new_state_dict[new_key] = v
+
+        # 保存带有`module.`前缀的模型权重
+        torch.save(new_state_dict, args.save_path)
+
 
     # 通知所有工作进程训练完成，以便优雅地退出
     dist.barrier()

@@ -479,6 +479,7 @@ class NetTrainer:
         self.model =  torch.nn.DataParallel(model).cuda()
         self.device = torch.device(device)
         # 仅当检查点路径存在时尝试加载权重
+        #只加载了权重，没有加载别的可以继续训练的信息。
         if ckpt_path is not None :
             if not os.path.exists(ckpt_path):
                 raise FileNotFoundError(f"The provided checkpoint path '{ckpt_path}' does not exist.")
@@ -487,7 +488,10 @@ class NetTrainer:
             else:
                 # 如果 CUDA 不可用，将权重映射到 CPU
                 weights = torch.load(ckpt_path, map_location=torch.device('cpu'))
+            if 'model_state_dict' in weights.keys():
+                weights = weights['model_state_dict']
             self.model.load_state_dict(weights)
+            
             print(f"Loaded checkpoint from {ckpt_path}.")
         self.model.train()  # 将训练模式设置移至此处，避免每次初始化模型后都需要调用initialize_model方法
 
