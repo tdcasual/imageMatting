@@ -37,33 +37,9 @@ def write_to_tensorboard(epoch, batch_idx, losses, rank, datalength):
 
 # ... 其他代码 ...
 # 配置DeepSpeed
-deepspeed_config = {
-    "train_batch_size": 8,
-    "gradient_accumulation_steps": 1,
-    "fp16": {
-        "enabled": True
-    },
-    "optimizer": {
-        "type": "AdamW",
-        "params": {
-            "lr": 0.001,
-            "betas": [0.9, 0.999],
-            "eps": 1e-8,
-            "weight_decay": 0.01
-        }
-    },
-    "scheduler": {
-        "type": "WarmupLR",
-        "params": {
-            "warmup_min_lr": 0,
-            "warmup_max_lr": 0.001,
-            "warmup_num_steps": 100
-        }
-    }
-}
 
 
-def deepspeed_train_modnet(all_data, model, epochs=100, ckpt_path=None, deepspeed_config=deepspeed_config):
+def deepspeed_train_modnet(all_data, model, deepspeed_config,epochs=100, ckpt_path=None, ):
     # 确保在主进程中设置分布式环境
     setup_tensorboard(dist.get_rank())
 
@@ -154,9 +130,11 @@ if __name__ == "__main__":
         args.ckptpath = None
     deepspeed_config = load_deepspeed_config(args.deepspeed_config)
     default_epoch = 50 if args.epoch == 0 else args.epoch
+    print(f"now, batch_size is {args.batch_size}")
     if args.batch_size != 0:
         deepspeed_config["train_batch_size"]= args.batch_size
 
+    print(deepspeed_config)
     # 使用 args.local_rank 设置分布式环境
     #torch.cuda.set_device(args.local_rank)
     #torch.distributed.init_process_group(backend='nccl')
@@ -184,7 +162,7 @@ if __name__ == "__main__":
     ckpt_path = args.ckptpath
 
     # 调用deepspeed进行训练
-    deepspeed_train_modnet(all_data, model, epochs=default_epoch, ckpt_path=ckpt_path)
+    deepspeed_train_modnet(all_data, model,deepspeed_config, epochs=default_epoch, ckpt_path=ckpt_path)
 
     # 获取模型权重
     #model_state_dict = model.module.state_dict() if isinstance(model, torch.nn.parallel.DistributedDataParallel) else model.state_dict()

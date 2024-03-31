@@ -1,8 +1,63 @@
 #!/bin/bash
 
-# 设置环境变量，例如 MASTER_ADDR 和 MASTER_PORT（如果适用）
-# export MASTER_ADDR=localhost
-# export MASTER_PORT=12345
+
+# 解析命令行参数
+while [[ $# -gt 0 ]]; do
+    key="$1"
+    case $key in
+        --ckpt_path)
+            ckpt_path="$2"
+            shift # past argument
+            ;;
+        --fg_path)
+            fg_path="$2"
+            shift # past argument
+            ;;
+        --matte_path)
+            matte_path="$2"
+            shift # past argument
+            ;;
+        --batch_size)
+            batch_size="$2"
+            shift # past argument
+            ;;
+        --epochs)
+            epochs="$2"
+            shift # past argument
+            ;;
+        --config_file)
+            config_file="$2"
+            shift # past argument
+            ;;
+        --access_id)
+            access_id="$2"
+            shift # past argument
+            ;;
+        --secret_key)
+            secret_key="$2"
+            shift # past argument
+            ;;
+        --area)
+            area="$2"
+            shift # past argument
+            ;;
+        --endpoint)
+            endpoint="$2"
+            shift # past argument
+            ;;
+        --save_path)
+            save_path="$2"
+            shift # past argument
+            ;;
+        *)    # unknown option
+            echo "Unknown option: $key"
+            exit 1
+            ;;
+    esac
+    shift # past argument or value
+done
+
+
 
 # 定义要传递给 deeptrain.py 的参数
 #ckpt_path=<your_ckpt_path>
@@ -22,7 +77,19 @@ access_id=${access_id:-<your_access_id>}
 secret_key=${secret_key:-<your_secret_key>}
 area=${area:-tdcasual}
 endpoint=${endpoint:-beijing}
+save_path=${save_path:-model.pth}
 
+echo "$batch_size"
+echo "$fg_path"
+echo "$matte_path"
+echo "$batch_size"
+echo "$epochs"
+echo "$config_file"
+echo "$access_id"
+echo "$secret_key"
+echo "$area"
+echo "$endpoint"
+echo "$save_path"
 # 使用 DeepSpeed 启动分布式训练，传递参数
 deepspeed deeptrain.py \
     --ckptpath="$ckpt_path" \
@@ -30,10 +97,12 @@ deepspeed deeptrain.py \
     --matte_path="$matte_path" \
     --batch_size="$batch_size" \
     --epoch="$epochs" \
-    --deepspeed_config="$config_file"
+    --deepspeed_config="$config_file" \
+    --epoch="$epochs" \
+    --save_path="$save_path" 
 
 
-# ... 前面的代码不变 ...
+
 
 # 检查 RANK 环境变量，只在 rank 0 上执行模型保存和上传
 if [ "$RANK" -eq 0 ]; then
