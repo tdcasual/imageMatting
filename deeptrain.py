@@ -85,6 +85,7 @@ def deepspeed_train_modnet(all_data, model, deepspeed_config,epochs=100, ckpt_pa
             # Automatic Mixed Precision block
             with autocast():
                 # 训练迭代中的前向传播
+                image,trimap,gt_matte = image.cuda(),trimap.cuda(),gt_matte.cuda()
                 total_loss = speed_training_iter(
                     model, optimizer, image, trimap, gt_matte,
                     semantic_scale=10.0, detail_scale=10.0, matte_scale=1.0)
