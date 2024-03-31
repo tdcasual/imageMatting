@@ -521,7 +521,7 @@ class NetTrainer:
                 
                 image, trimap, gt_matte = [item.to(self.device) for item in (image, trimap, gt_matte)]
 
-                semantic_loss, detail_loss, matte_loss = supervised_training_iter(image, trimap, gt_matte)
+                semantic_loss, detail_loss, matte_loss = supervised_training_iter(self.model, optimizer, image, trimap, gt_matte)
                 
                 self.writer.add_scalar('semantic_loss', semantic_loss, epoch * len(train_dataloader) + idx)
                 self.writer.add_scalar('detail_loss', detail_loss, epoch * len(train_dataloader) + idx)
@@ -553,17 +553,10 @@ if __name__=="__main__":
     fg = base_path+"FG"
     matte= base_path+"Alpha"
     files = ReadImage(fg,matte).read_same_names()
-    transformer = transforms.Compose(
-        [
-            transforms.ToTensor(),
-            transforms.Normalize((0.5), (0.5)
-            )
-        ]
-    )
-    all_data = OriginModNetDataLoader(files,[512,512],transform=transformer)
+    all_data = OriginModNetDataLoader(files,[512,512])
     #aim_model = init_model(MODNet(),ckpt_path="pretrained/modnet_photographic_portrait_matting.ckpt")
     training_model  = NetTrainer(model=MODNet())
-    #training_model.train(all_data)
-    aim = ModNetImageGenerator(files,training_model.get_model())
+    training_model.train(all_data,batch_size=12,epochs=120)
+    #aim = ModNetImageGenerator(files,training_model.get_model())
     print(aim.evaluate([1,2,3,4,5]))
 

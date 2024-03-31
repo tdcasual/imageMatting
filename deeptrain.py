@@ -31,7 +31,7 @@ def setup_tensorboard(rank):
     # 获取当前日期和时间
     current_time = datetime.now()
     # 格式化日期和时间，例如："YYYY-MM-DD_HH-MM-SS"
-    formatted_time = current_time.strftime('%Y-%m-%d_%H-%M-%S')
+    formatted_time = current_time.strftime('%Y-%m-%d_%H-%M')
 
     # 将格式化的时间字符串添加到 log_dir 路径中
     log_dir = f"/mnt/data/runs/deepspeed_train_{formatted_time}"
