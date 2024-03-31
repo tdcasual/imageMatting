@@ -235,8 +235,8 @@ def speed_training_iter(
     global blurer
 
     # set the model to train mode and clear the optimizer
-    modnet.train()
-    optimizer.zero_grad()
+    #modnet.train()
+    #optimizer.zero_grad()
 
     # forward the model
     pred_semantic, pred_detail, pred_matte = modnet(image.half(), False)

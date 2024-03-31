@@ -50,7 +50,7 @@ def deepspeed_train_modnet(all_data, model, deepspeed_config,epochs=100, ckpt_pa
 
     # 创建DistributedSampler
     sampler = torch.utils.data.distributed.DistributedSampler(all_data, num_replicas=world_size, rank=rank)
-    num_workers = min(mp.cpu_count(), 1024)  # 假设我们使用不超过4个workers
+    num_workers = min(mp.cpu_count(), 4)  # 假设我们使用不超过4个workers
     #num_workers=4
     # 更新DataLoader
     dataloader = DataLoader(all_data, 
@@ -80,23 +80,27 @@ def deepspeed_train_modnet(all_data, model, deepspeed_config,epochs=100, ckpt_pa
 
         for batch_idx, (image, trimap, gt_matte) in enumerate(dataloader):
             # Resets gradients of the optimizer
-            optimizer.zero_grad()
+            #optimizer.zero_grad()
 
             # Automatic Mixed Precision block
             with autocast():
                 # 训练迭代中的前向传播
                 image,trimap,gt_matte = image.cuda(),trimap.cuda(),gt_matte.cuda()
+                # image,trimap,gt_matte = image.cuda().half(),trimap.cuda().half(),gt_matte.cuda().half()
                 total_loss = speed_training_iter(
                     model, optimizer, image, trimap, gt_matte,
                     semantic_scale=10.0, detail_scale=10.0, matte_scale=1.0)
+                #optimizer.zero_grad()
+                optimizer.zero_grad()
+                scaler.scale(total_loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
             write_to_tensorboard(epoch, batch_idx, total_loss.item(), rank, len(dataloader))  # 修改此处，只传递总损失    
             #write_to_tensorboard(epoch, batch_idx, [semantic_loss.item(), detail_loss.item(), matte_loss.item()], rank, len(dataloader))
                 
             # Scales the loss, calls backward to create scaled gradients, and step the optimizer
             # Unscales the gradients of optimizer's assigned params in-place before calling optimizer.step()
-            scaler.scale(total_loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
+
     if dist.get_rank() == 0:
         global_summary_writer.close()
 def load_deepspeed_config(config_file_path):
