@@ -147,8 +147,9 @@ if __name__ == "__main__":
     parser.add_argument('--batch_size', type=int, default=0, help='Local batch_size for distributed training (default: 0).')  # 添加对 --local_rank 的支持
     parser.add_argument('--epoch', type=int, default=0, help='Local epoch for distributed training (default: 0).')  # 添加对 --local_rank 的支持
     parser.add_argument('--deepspeed_config', default="deepspeed.config", type=str, help='Path to the DeepSpeed configuration file.')
+    parser.add_argument('--save_path', default="model.pth", type=str, help='Path to the checkpoint file.')
     args = parser.parse_args()
-
+    print(f"checkpoint will be saved on {args.save_path}")
     if args.ckptpath == "None":
         args.ckptpath = None
     deepspeed_config = load_deepspeed_config(args.deepspeed_config)
@@ -193,7 +194,7 @@ if __name__ == "__main__":
     if dist.get_rank() == 0:
         # 保存完整的模型权重
         model_state_dict = model.module.state_dict() if isinstance(model, torch.nn.parallel.DistributedDataParallel) else model.state_dict()
-        torch.save(model_state_dict, 'model.pth')
+        torch.save(model_state_dict, args.save_path)
 
     # 通知所有工作进程训练完成，以便优雅地退出
     dist.barrier()
