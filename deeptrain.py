@@ -33,7 +33,7 @@ def setup_tensorboard(rank):
 def write_to_tensorboard(epoch, batch_idx, losses, rank, datalength):
     # 将训练损失写入 TensorBoard
     if rank == 0:
-        global_summary_writer.add_scalar('Training/Loss', sum(losses), epoch * datalength + batch_idx)
+        global_summary_writer.add_scalar('Training/Loss', losses, epoch * datalength + batch_idx)
 
 # ... 其他代码 ...
 # 配置DeepSpeed
