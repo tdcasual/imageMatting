@@ -28,18 +28,24 @@ def download_file(bucket, remote_file, save_as):
         return
     bucket.get_object_to_file(remote_file, save_as)
 
-if __name__ == "__main__":
+import argparse
+import oss2
+
+def main():
     parser = argparse.ArgumentParser(description="Upload/download/list files on Aliyun OSS")
     parser.add_argument("action", choices=["push", "get", "list"], help="The action to perform")
     parser.add_argument("-f", "--file", default="model.pth", help="Local file to push (default: model.pth)")
     parser.add_argument("-d", "--dir", default="mattingModel", help="Remote directory in OSS (default: mattingModel)")
     parser.add_argument("-s", "--save-as", help="Local file name to save when getting from OSS")
-
+    parser.add_argument("--access-id", required=True, help="Your Access Key ID for Aliyun OSS authentication")
+    parser.add_argument("--secret-key", required=True, help="Your Access Key Secret for Aliyun OSS authentication")
+    parser.add_argument("--area", default="tdcasual", help="The bucket area (default: tdcasual)")
+    parser.add_argument("--endpoint", default="beijing", help="The bucket area (default: tdcasual)")
     args = parser.parse_args()
 
-    auth = oss2.Auth('LTAI5tDgm7nf3f1tyvUwak3C', 'ae6DcwjznzILMSxlINSSH9SULdeZKy')
-    endpoint = 'http://oss-cn-beijing.aliyuncs.com'
-    bucket = oss2.Bucket(auth, endpoint, 'tdcasual')
+    auth = oss2.Auth(args.access_id, args.secret_key)
+    endpoint = f'http://oss-cn-{args.endpoint}.aliyuncs.com'
+    bucket = oss2.Bucket(auth, endpoint, args.area)
 
     if args.action == "push":
         upload_file(bucket, args.file, args.dir)
@@ -49,3 +55,6 @@ if __name__ == "__main__":
         list_files(bucket, args.dir)
     else:
         print("Invalid action specified.")
+
+if __name__ == "__main__":
+    main()

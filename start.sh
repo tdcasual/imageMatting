@@ -18,6 +18,10 @@ matte_path=${matte_path:-/mnt/data/Train/Alpha}
 batch_size=${batch_size:-0}
 epochs=${epochs:-50}
 config_file=${config_file:-deepspeed.config}
+access_id=${access_id:-<your_access_id>}
+secret_key=${secret_key:-<your_secret_key>}
+area=${area:-tdcasual}
+endpoint=${endpoint:-beijing}
 
 # 使用 DeepSpeed 启动分布式训练，传递参数
 deepspeed deeptrain.py \
@@ -28,10 +32,19 @@ deepspeed deeptrain.py \
     --epoch="$epochs" \
     --deepspeed_config="$config_file"
 
+
+# ... 前面的代码不变 ...
+
 # 检查 RANK 环境变量，只在 rank 0 上执行模型保存和上传
 if [ "$RANK" -eq 0 ]; then
     echo "Rank 0 is saving and uploading the model..."
-    python3 preserve.py push
+    
+    # 直接执行 preserve.py 并传递参数
+    python3 preserve.py push \
+        --access-id="$access_id" \
+        --secret-key="$secret_key" \
+        --area="$area" \
+        --endpoint="$endpoint"
 else
     echo "Rank $RANK finished training but will not save or upload the model."
 fi
