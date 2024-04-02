@@ -90,7 +90,6 @@ class AASPP(nn.Module):
 class FeatureFusion(nn.Module):
     def __init__(self, low_channels, mid_channels, high_channels, enhanced_channels, attended_channels, out_channels):
         super(FeatureFusion, self).__init__()
-        print()
         self.aspp = ASPP(high_channels, out_channels, atrous_rates=[6, 12, 18])
         
         self.conv_low = nn.Sequential(
@@ -126,7 +125,7 @@ class FeatureFusion(nn.Module):
         mid_feat = F.interpolate(mid_feat, size=target_size, mode='bilinear', align_corners=True)
         enhanced_feat = F.interpolate(enhanced_feat, size=target_size, mode='bilinear', align_corners=True)
         attended_feat = F.interpolate(attended_feat, size=target_size, mode='bilinear', align_corners=True)
-        print(low_feat.shape,mid_feat.shape, high_feat.shape,enhanced_feat.shape,attended_feat.shape)
+        #print(low_feat.shape,mid_feat.shape, high_feat.shape,enhanced_feat.shape,attended_feat.shape)
         feat = low_feat + mid_feat + high_feat + enhanced_feat + attended_feat
         return feat
 

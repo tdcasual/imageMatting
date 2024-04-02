@@ -111,7 +111,7 @@ def deepspeed_train_FiniteNet(all_data, model, deepspeed_config,epochs=100, ckpt
                 write_to_tensorboard(epoch, idx, matte_loss.item(), rank, len(dataloader))  # 修
 
             # 在每个epoch后更新学习率（如果lr_scheduler支持DeepSpeed，则直接调用step()；否则可能需要特殊处理）
-            lr_scheduler.step()
+            scheduler.step()
 
     if dist.get_rank() == 0:
         global_summary_writer.close()
