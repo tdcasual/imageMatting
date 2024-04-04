@@ -79,6 +79,7 @@ def deepspeed_train_FiniteNet(all_data, model, deepspeed_config,epochs=100, ckpt
     )
 
     for epoch in range(epochs):
+        print(f"now begin epoch at {datetime.now()}")
         model.train()
         
 
@@ -173,7 +174,7 @@ if __name__ == "__main__":
     #print(fg,matte)
     files = ReadImage(fg, matte).read_same_names()
     #print(files)
-    all_data = OriginModNetDataLoader(files, resize_dim=[512, 512])
+    all_data = OriginModNetDataLoader(files, resize_dim=[512, 512],hot_path=base_path+"newHeatmaps.pt")
 
     # 初始化模型
     model = FiniteNet()

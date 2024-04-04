@@ -82,7 +82,7 @@ def deepspeed_train_FiniteNet(all_data, model, deepspeed_config,epochs=100, ckpt
     # 开始训练
     for epoch in range(epochs):
         model.train()
-        
+        print(f"now begin epoch at {datetime.now()}")
 
         # Initialize the gradient scaler for automatic mixed precision
         scaler = GradScaler()
@@ -127,8 +127,8 @@ import argparse
 import os
 
 # 默认的fg和matte路径
-default_fg_path = "/mnt/data/Train/FG"
-default_matte_path = "/mnt/data/Train/Alpha"
+default_fg_path = "/mnt/data/Test/Comp"
+default_matte_path = "/mnt/data/Test/Alpha"
 
 if __name__ == "__main__":
     torch.multiprocessing.set_start_method('spawn', force=True)
