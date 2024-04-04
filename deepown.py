@@ -87,9 +87,9 @@ def deepspeed_train_FiniteNet(all_data, model, deepspeed_config,epochs=100, ckpt
         # Initialize the gradient scaler for automatic mixed precision
         scaler = GradScaler()
 
-
-        for epoch in range(epochs):
-            for idx, (image, trimap, gt_matte) in enumerate(dataloader):
+        
+        for idx, (image, trimap, gt_matte) in enumerate(dataloader):
+            with autocast():
                 # 解析batch_data，通常它会包含一个字典或元组
                 #image, trimap, gt_matte = batch_data['image'], batch_data['trimap'], batch_data['gt_matte']
 
@@ -103,12 +103,14 @@ def deepspeed_train_FiniteNet(all_data, model, deepspeed_config,epochs=100, ckpt
                 matte_loss = torch.nn.functional.mse_loss(pre_matte, gt_matte)
 
                 # 使用DeepSpeed进行反向传播和优化步骤
-                model.backward(matte_loss)
-                model.step()
+                optimizer.zero_grad()
+                scaler.scale(matte_loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
 
                 # 记录损失
                 #global_summary_writer.add_scalar('matte_loss', matte_loss.item(), epoch * len(dataloader) + idx)
-                write_to_tensorboard(epoch, idx, matte_loss.item(), rank, len(dataloader))  # 修
+            write_to_tensorboard(epoch, idx, matte_loss.item(), rank, len(dataloader))  # 修
 
             # 在每个epoch后更新学习率（如果lr_scheduler支持DeepSpeed，则直接调用step()；否则可能需要特殊处理）
             scheduler.step()

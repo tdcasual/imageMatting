@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python
 # coding: utf-8
 
@@ -28,9 +27,9 @@ from skimage.metrics import structural_similarity, peak_signal_noise_ratio
 from datetime import datetime
 from torchvision.transforms.functional import to_tensor, to_pil_image
 #from tensorboardX import SummaryWriter  # 若您只需要一个，请选择保留其中一个
+import matplotlib.patches as patches
 
-
-
+from collections import OrderedDict
 
 class ReadImage:
     def __init__(self, fg_dir: str, alpha_dir: str):
@@ -122,7 +121,7 @@ class ReadImage:
 
 
 class OriginModNetDataLoader(Dataset):
-    def __init__(self, annotations_file, resize_dim=None, transform=None):
+    def __init__(self, annotations_file, resize_dim=None, transform=None, hot_path=None):
         self.img_labels = annotations_file
         if not transform:
             transform = transforms.Compose(
@@ -131,43 +130,58 @@ class OriginModNetDataLoader(Dataset):
                     transforms.Normalize((0.5), (0.5))
                 ]
             )
-        self.transform = transform
-        
-            
+        self.transform = transform     
         self.resize_dim = resize_dim
+        if hot_path:
+            self.hot = torch.load(hot_path)
+        else:
+            self.hot = None
 
     def __len__(self):
         return len(self.img_labels)
 
     def __getitem__(self, idx):
-        
-        img_path = self.img_labels.iloc[idx, 0]
-        mask_path = self.img_labels.iloc[idx, 1]
-        img = self._load_image(img_path)
-        mask = self._load_mask(mask_path)
-
-        if  self.transform:
-            img = self.transform(img)
-            trimap = self.get_trimap(mask)
-            mask = self.transform(mask)
-
-        if self.resize_dim is not None:
-            img = self._center_crop_and_resize(img)
-            mask = self._center_crop_and_resize(mask)
-            trimap = self._center_crop_and_resize(trimap, trimap=True)
+        if self.hot:
+            img_path = self.img_labels.iloc[idx, 0]
+            mask_path = self.img_labels.iloc[idx, 1]
+            img = self._load_image(img_path)
+            mask = self._load_mask(mask_path)
+            img = self._center_crop_and_resize(to_tensor(img))
+            mask = self._center_crop_and_resize(to_tensor(mask))
+            
+            img = transforms.Normalize((0.5), (0.5))(img)
+            mask = transforms.Normalize((0.5), (0.5))(mask)
+            img = torch.squeeze(img, 0)
+            mask = torch.squeeze(mask, 0)
+            return img, self.hot[img_path.split("/")[-1]],mask
         else:
-            img = self._resize(img)
-            mask = self._resize(mask)
-            trimap = self._resize(trimap, trimap=True)
+            img_path = self.img_labels.iloc[idx, 0]
+            mask_path = self.img_labels.iloc[idx, 1]
+            img = self._load_image(img_path)
+            mask = self._load_mask(mask_path)
 
-        img = torch.squeeze(img, 0)
-        mask = torch.squeeze(mask, 0)
-        trimap = torch.squeeze(trimap, 1)
-        try:
-            return img, trimap, mask
-        except Exception as e:
-            print(f"Error processing image at index {idx}: {str(e)}")
-            return None
+            if  self.transform:
+                img = self.transform(img)
+                trimap = self.get_trimap(mask)
+                mask = self.transform(mask)
+
+            if self.resize_dim is not None:
+                img = self._center_crop_and_resize(img)
+                mask = self._center_crop_and_resize(mask)
+                trimap = self._center_crop_and_resize(trimap, trimap=True)
+            else:
+                img = self._resize(img)
+                mask = self._resize(mask)
+                trimap = self._resize(trimap, trimap=True)
+
+            img = torch.squeeze(img, 0)
+            mask = torch.squeeze(mask, 0)
+            trimap = torch.squeeze(trimap, 1)
+            try:
+                return img, trimap, mask
+            except Exception as e:
+                print(f"Error processing image at index {idx}: {str(e)}")
+                return None
 
     def _load_image(self, img_path):
         img = np.asarray(Image.open(img_path))
@@ -254,7 +268,48 @@ class OriginModNetDataLoader(Dataset):
     
         return im
 
+    def show_with_key(self,idx=None,model=None,image_path=None):
+        if idx==None and image_path==None:
+            return None
+        # 加载预训练的关键点检测模型
+        #model = models.detection.keypointrcnn_resnet50_fpn(pretrained=True)
+       # model.eval()  # 将模型设置为评估模式
+    
+        # 图像预处理
+        transform = transforms.Compose([
+            transforms.ToTensor(),
+        ])
+        
+        # 加载图像
+        if idx:
+            image_path = self.img_labels.iloc[idx, 0]
+            image = Image.open(image_path).convert("RGB")
+        elif  type(image_path) == str:
+            image = Image.open(image_path).convert("RGB")
+        else:
+            image = image_path
+        image_tensor = self._center_crop_and_resize(transform(image))  # 添加批次维度
+        #print(image_tensor.shape)
+        if model:
+            _,keypoints,_ = model(image_tensor.to("cuda" if torch.cuda.is_available() else "cpu"))
+            keypoints = keypoints[0]
+            #print(keypoints)
+        elif idx:
+            keypoints=self.hot[image_path.split("/")[-1]]
+        # 可视化
+        fig, ax = plt.subplots(1)
+        ax.imshow(to_pil_image(image_tensor.squeeze(0)))
+        #print(predictions[1][0].shape)
+        #print(predictions[1][0])
 
+        for kpt in keypoints:
+            x, y, confidence = kpt
+            if confidence > 0.8:  # 可根据需要调整置信度阈值
+                circle = patches.Circle((x, y), radius=2, edgecolor='r', facecolor='red')
+                ax.add_patch(circle)
+
+        plt.axis('off')  # 不显示坐标轴
+        plt.show()
 
 # In[5]:
 
@@ -292,6 +347,7 @@ class ImageMatteLoader:
         # 合并图像进行展示
         combined = self._combined_display(image, matte)
         combined.show()
+        return image,matte
     
     def _resize_and_crop(self, image, target_size):
         img_tensor = to_tensor(image)[None, :, :, :]
@@ -563,4 +619,3 @@ if __name__=="__main__":
     training_model.train(all_data,batch_size=12,epochs=120)
     #aim = ModNetImageGenerator(files,training_model.get_model())
     print(aim.evaluate([1,2,3,4,5]))
-
