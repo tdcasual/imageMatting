@@ -13,6 +13,8 @@ import torch.nn.functional as F
 
 def wing_loss(y, y_pred, w=10, epsilon=2):
     absolute_loss = torch.abs(y - y_pred)
+    w = torch.tensor(w, dtype=torch.float32)
+    epsilon = torch.tensor(epsilon, dtype=torch.float32)
     C = w - w * torch.log(1 + w / epsilon)
     loss = torch.where(torch.lt(absolute_loss, w),
                        w * torch.log(1 + absolute_loss / epsilon),
