@@ -10,6 +10,14 @@ from torch.utils.tensorboard import SummaryWriter
 import torch.nn as nn
 from collections import OrderedDict
 import torch.nn.functional as F
+
+def wing_loss(y, y_pred, w=10, epsilon=2):
+    absolute_loss = torch.abs(y - y_pred)
+    C = w - w * torch.log(1 + w / epsilon)
+    loss = torch.where(torch.lt(absolute_loss, w),
+                       w * torch.log(1 + absolute_loss / epsilon),
+                       absolute_loss - C)
+    return torch.mean(loss)
 class OwnNetTrainer:
     def __init__(self, model, device='cuda', ckpt_path=None):
         self.model =  torch.nn.DataParallel(model).cuda()
@@ -142,23 +150,25 @@ class OwnNetTrainer:
         self.matte_loss_weight = torch.nn.Parameter(torch.tensor(0.0), requires_grad=True)
         self.keypoint_loss_weight = torch.nn.Parameter(torch.tensor(0.0), requires_grad=True)
         for epoch in range(start_epoch, epochs):
-            for idx, (image, trimap, gt_matte) in enumerate(train_dataloader):
-                image, keypoint, gt_matte = [item.to(self.device) for item in (image, trimap, gt_matte)]
-                _, pre_keypoint, pre_matte = self.model(image)
-                # 修改训练循环中的损失计算部分
-                matte_loss = nn.functional.mse_loss(pre_matte, gt_matte)
-                keypoint_loss = nn.functional.mse_loss(pre_keypoint, keypoint)
+            for idx, (image, keypoints, gt_matte) in enumerate(train_dataloader):
+                image, keypoints, gt_matte = [item.to(self.device) for item in (image, keypoints, gt_matte)]
+                pre_image, pre_keypoint, pre_matte = self.model(image)
 
-                # 对损失进行归一化处理
-                normalized_matte_loss = (matte_loss - matte_loss.min()) / (matte_loss.max() - matte_loss.min() + 1e-6)
-                normalized_keypoint_loss = (keypoint_loss - keypoint_loss.min()) / (keypoint_loss.max() - keypoint_loss.min() + 1e-6)
+                # 使用MSE计算预测的matte和真实matte之间的损失
+                matte_loss = F.mse_loss(pre_matte, gt_matte)
 
+                # 使用Wing损失函数计算预测的关键点和真实关键点之间的损失
+                keypoint_loss = wing_loss(pre_keypoint, keypoints, w=10, epsilon=2)
+
+                # 直接使用损失值，不进行归一化处理
                 # 计算相对权重
-                weights = F.softmax(torch.tensor([self.matte_loss_weight, self.keypoint_loss_weight]), dim=0)
+                weights = F.softmax(torch.tensor([self.matte_loss_weight, self.keypoint_loss_weight], device=self.device), dim=0)
 
-                weighted_matte_loss = weights[0] * normalized_matte_loss
-                weighted_keypoint_loss = weights[1] * normalized_keypoint_loss
+                # 应用权重
+                weighted_matte_loss = weights[0] * matte_loss
+                weighted_keypoint_loss = weights[1] * keypoint_loss
 
+                # 计算总损失
                 total_loss = weighted_matte_loss + weighted_keypoint_loss
 
                 optimizer.zero_grad()
@@ -166,12 +176,13 @@ class OwnNetTrainer:
                 optimizer.step()
 
                 # 记录加权损失和权重值
-                self.writer.add_scalar('weighted_matte_loss', weighted_matte_loss.item(), epoch * len(train_dataloader) + idx)
-                self.writer.add_scalar('weighted_keypoint_loss', weighted_keypoint_loss.item(), epoch * len(train_dataloader) + idx)
-                self.writer.add_scalar('matte_loss_weight', weights[0].item(), epoch * len(train_dataloader) + idx)
-                self.writer.add_scalar('keypoint_loss_weight', weights[1].item(), epoch * len(train_dataloader) + idx)
+                self.writer.add_scalar('Weighted Matte Loss', weighted_matte_loss.item(), global_step=epoch * len(train_dataloader) + idx)
+                self.writer.add_scalar('Weighted Keypoint Loss', weighted_keypoint_loss.item(), global_step=epoch * len(train_dataloader) + idx)
+                self.writer.add_scalar('Matte Loss Weight', weights[0].item(), global_step=epoch * len(train_dataloader) + idx)
+                self.writer.add_scalar('Keypoint Loss Weight', weights[1].item(), global_step=epoch * len(train_dataloader) + idx)
 
             lr_scheduler.step()
+
 
             if (epoch + 1) % checkpoint_freq == 0:
                 os.makedirs(checkpoint_dir, exist_ok=True)
