@@ -9,7 +9,7 @@ from datetime import datetime
 from torch.utils.tensorboard import SummaryWriter
 import torch.nn as nn
 from collections import OrderedDict
-
+import torch.nn.functional as F
 class OwnNetTrainer:
     def __init__(self, model, device='cuda', ckpt_path=None):
         self.model =  torch.nn.DataParallel(model).cuda()
@@ -138,23 +138,38 @@ class OwnNetTrainer:
                     print(f"Loaded checkpoint from {checkpoint_path}. Starting from epoch {start_epoch}")
         except Exception as e:
             print(f"Error loading checkpoint: {e}")
-
+                        # 在初始化方法中添加损失权重变量
+        self.matte_loss_weight = torch.nn.Parameter(torch.tensor(0.0), requires_grad=True)
+        self.keypoint_loss_weight = torch.nn.Parameter(torch.tensor(0.0), requires_grad=True)
         for epoch in range(start_epoch, epochs):
             for idx, (image, trimap, gt_matte) in enumerate(train_dataloader):
                 image, keypoint, gt_matte = [item.to(self.device) for item in (image, trimap, gt_matte)]
-                _, key, pre_matte = self.model(image)
+                _, pre_keypoint, pre_matte = self.model(image)
+                # 修改训练循环中的损失计算部分
                 matte_loss = nn.functional.mse_loss(pre_matte, gt_matte)
-                keypoint_loss = nn.functional.mse_loss(key, keypoint)
-                total_loss = matte_loss * 2 + keypoint_loss
+                keypoint_loss = nn.functional.mse_loss(pre_keypoint, keypoint)
+
+                # 对损失进行归一化处理
+                normalized_matte_loss = (matte_loss - matte_loss.min()) / (matte_loss.max() - matte_loss.min() + 1e-6)
+                normalized_keypoint_loss = (keypoint_loss - keypoint_loss.min()) / (keypoint_loss.max() - keypoint_loss.min() + 1e-6)
+
+                # 计算相对权重
+                weights = F.softmax(torch.tensor([self.matte_loss_weight, self.keypoint_loss_weight]), dim=0)
+
+                weighted_matte_loss = weights[0] * normalized_matte_loss
+                weighted_keypoint_loss = weights[1] * normalized_keypoint_loss
+
+                total_loss = weighted_matte_loss + weighted_keypoint_loss
 
                 optimizer.zero_grad()
                 total_loss.backward()
                 optimizer.step()
 
-                # 添加各项损失到TensorBoard
-                self.writer.add_scalar('matte_loss', matte_loss.item(), epoch * len(train_dataloader) + idx)
-                self.writer.add_scalar('keypoint_loss', keypoint_loss.item(), epoch * len(train_dataloader) + idx)
-                self.writer.add_scalar('total_loss', total_loss.item(), epoch * len(train_dataloader) + idx)
+                # 记录加权损失和权重值
+                self.writer.add_scalar('weighted_matte_loss', weighted_matte_loss.item(), epoch * len(train_dataloader) + idx)
+                self.writer.add_scalar('weighted_keypoint_loss', weighted_keypoint_loss.item(), epoch * len(train_dataloader) + idx)
+                self.writer.add_scalar('matte_loss_weight', weights[0].item(), epoch * len(train_dataloader) + idx)
+                self.writer.add_scalar('keypoint_loss_weight', weights[1].item(), epoch * len(train_dataloader) + idx)
 
             lr_scheduler.step()
 
